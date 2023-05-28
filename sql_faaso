@@ -174,3 +174,22 @@ select customer_id,sum(distance)/count(order_id) from
 a.order_id = b.order_id where pickup_time is not null)a) b
 where rnk = 1)c
 group by customer_id;
+
+/*what was the difference between shortest and longest delivery time for all orders*/
+select max(duration) - min(duration) diff from 
+(select *, cast(case when duration like "%min%" then left(duration,charindex("m",duration)-1) else duration end as integer)
+as duration from driver_order where 
+duration is not null)a;
+
+/*what was the average spped of each driver for each delivery and do you notice any trend for these values*/
+select order_id,driver_id,distance/duration as speed  from 
+(select order_id,driver_id, cast(trim(replace(lower(b.distance,"km","")) as decimal(4,2)) distance),cast(case when duration like "%min%" then left(duration,charindex("m",duration)-1) else duration end as integer)
+as duration from driver_order where 
+duration is not null)a;
+
+/*what is the successfull delivery percentage for each driver*/
+sdp = total successfull orders/total orders taken
+
+
+select driver_id,case when lower(cancellation) like "%cancel%" then 0 else 1 end as cancelation_report from driver_order
+
