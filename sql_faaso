@@ -84,43 +84,93 @@ select * from rolls_recipes;
 select count(roll_id) from customer_orders;
 
 /*how many unique customers ordered the roll*/
-select count(distinct customer_id) from customer_orders;
+select count(distinct custiomer_id) from customer_orders;
 
 /*How many successfull orders were delivered by driver*/
 select driver_id,count(distinct order_id) from driver_order where cancellation not in ("cancellation","customer cancellation") group by driver_id;
 
-
 /*How many of each type of roll was delivered*/
 /*clean the data*/
-select roll_id,count(roll_id) from customer_orders  where order_id in 
-(select order_id from 
-(select *,case when cancellation in ("cancellation","customer cancellation") then "c" else "nc" end as order_cancel_details from driver_order)
-where cancellation = "nc");
+select roll_id,count(roll_id) from customer_orders where order_id in (
+(select *   from 
+(select *, case when cancellation in ("cancellation","customer cancellation") then "c" else "nc" end as order_cancel_details from driver_order)a
+where order_cancel_details = "nc")
+group by roll_id;
 
 /*How many veg and non veg rolls were ordered by the customers*/
 select a.*,b.roll_name from 
-(select customer_id,roll_id,count(roll_id)
-from customer_orders group by customer_id,roll_id)a inner join rolls b on a.roll_id = b.roll_id;
+(select customer_id,roll_id,count(roll_id) cnt from customer_orders group by  customer_id,roll_id)a inner join rolls b on a.roll_id = b.roll_id;
 
 /*What was the maximum number of rolls delivered in a single order*/
 select * from 
-(
-select *,rank() over (order by cnt) rnk from 
-(
-select order_id,count(roll_id) cnt from 
-(
-select * from customer_orders where order_id in (
+(select *, rank() over(order by cnt desc) from
+(select order_id, count(roll_id) cnt from 
+(select * from customer_orders where order_id in 
 select order_id from 
-(select *,case when cancellation in ("cancellation","customer cancellation") then "c" else "nc" end as order_cancel_details from driver_order)
-where cancellation = "nc"))b
-group by order_id
-)c)d where rnk = 1;
+(select *, case when cancellation in ("cancellation","customer cancellation") then "c" else "nc" end as order_cancel_details from driver_order)a
+where order_cancel_details = "nc")b
+group by order_id)c)d;
+
 
 /*for each customer, how many delivered rolls had atleast one change and how many had no change*/
-with temp_customer_orders (order_id,customer_id,roll_id,not_include_items,extra_items_included,order_date) as
-(select order_id,customer_id,roll_id,
-case when not_include_items=" " then "0" else not_include_items endas new_not_include_items, 
-case when extra_items_included=" " then "0" else extra_items_included end as new_extra_items_included,oder_date) from customer_orders)
-
+with temp_customer_orders(order_id,customer_id,roll_id,not_include_items,extra_items_included,order_date)
+(
+select order_id,customer_id,roll_id,case when not_include_items is null or not_include_items="" then "0" else not_include_items end as 
+new_not_include_items,case when extra_items_included is null or extra_items_included=" " or extra_items_included = "NaN" then "0" else extra_items_includedend as 
+new_extra_items_included,order_date
+)
 select * from temp_customer_orders;
 
+ temp_driver_order(order_id,driver_id,pickup_time,distance,duration,cancellation)
+(
+select order_id,driver_id,pickup_time,distance,duration,case when cancellation in ("cancellation","customer cancellation") then 0 else 1 end as new_cancellation
+)
+
+select customer_id,change_no_change,count(order_id) from 
+(select *,case when not_included_items = "0" and extra_items_included = "0" then "no change" else "change" end as 
+change_no_change from temp_customer_orders where order id in 
+(select * from temp_driver_order where new_cancellation!=0))a
+group by customer_id,change_no_change;
+
+/*How many rolls weere delived that has both extrusions and extras*/
+select customer_id,change_no_change,count(order_id) from 
+(select *,case when not_included_items != "0" and extra_items_included = !"0" then "change" else "no change" end as 
+change_no_change from temp_customer_orders where order id in 
+(select * from temp_driver_order where new_cancellation!=0))a
+group by customer_id,change_no_change;
+
+/*What was the total number of rolls ordered for each hour of the day*/
+select hr,count(hr) from 
+(select *,concat(cast((datepart(hour,order_date) as varchar) ,"-",cast((datepart(hour,order_date)+1)) hr  as varchar hr1 fom customer_orders)
+group by hr;
+
+/*what was the orders for each day of the week*/
+seelct dow,count(distinct order_id) from 
+(Select *,datename(dw,order_date) dow from customer_orders)a
+group by dow;
+
+/*Driver and customer experience based questions*/
+/*What was the average time in minutes took by each driver to reach at faaso HQ to pick up the order*/
+select driver_id,sum(diff)/count(order_id) from 
+(select * from 
+(select *,row_number() over (partition by order_id order by diff) rnk from 
+(select a.*,b.driver_id,b.pickup_time,b.distance,b.duration,b.cancellation,datediff(minute,a.order_date,b.pickup_time) from customer_orders a inner join driver_order b on 
+a.order_id = b.order_id where pickup_time is not null)a) b
+where rnk = 1)c
+group by driver_id;
+
+/*is there any relationship between number of rolls and how long the order takes to prepare*/
+select order_id,count(roll_id),sum(diff)/count(roll_id)
+(select a.*,b.driver_id,b.pickup_time,b.distance,b.duration,b.cancellation,datediff(minute,a.order_date,b.pickup_time) 
+from customer_orders a inner join driver_order b on 
+a.order_id = b.order_id where pickup_time is not null)a)
+group by order_id;
+
+/*what was the average distance travelled for each cx*/
+select customer_id,sum(distance)/count(order_id) from 
+(select * from 
+(select *,row_number() over (partition by order_id order by diff) rnk from 
+(select a.*,b.driver_id,b.pickup_time,cast(trim(replace(lower(b.distance,"km","")) as decimal(4,2)) distance),b.duration,b.cancellation,datediff(minute,a.order_date,b.pickup_time) from customer_orders a inner join driver_order b on 
+a.order_id = b.order_id where pickup_time is not null)a) b
+where rnk = 1)c
+group by customer_id;
